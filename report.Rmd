@@ -1,22 +1,184 @@
 ---
 title: "PML with WLE dataset"
 author: "Christophe Chevalier"
-date: "23 October 2015"
+date: "October 2015"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## 1. Introduction
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+The present report is the Course Project of the "Practical Machine Learning" course from Johns Hopkins University / Coursera. The objective is to apply Machine Learning technics and models to a research study made on Human Activity Recognition (HAR).  
+
+In the current study 6 participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions (the "classe" feature in the provided files):  
+A. exactly according to the specification  
+B. throwing the elbows to the front  
+C. lifting the dumbbell only halfway    
+D. lowering the dumbbell only halfway   
+E. throwing the hips to the front  
+
+4 different sensors (belt, arm, dumbbell and forearm) provide valuable information for each participant and each exercise. Our main objective is to build a machine learning algorithm to predict the activity quality ("classe" above) using information provided by the sensors.
+
+### Important remarks
+On the HAR website page, several scientific papers are available. Among them is the one of the authors of the Weight Lifting Exercises experiment (Velloso et al., 2013, ref 1) which provide valuable information for our own project:  
+
+- In their own analysis of the present dataset, the authors of the whole experiment (Velloso et al., 2013, ref 1) use an advanced feature selection algorithm based on correlation to select only 17 features from the whole amount of data available.
+  
+- Furthermore Velloso et al. were able to achieve remarkable prediction using a Random Forest approach on the 17 features selected above.  
+
+
+
+
+## 2. Pre-Processing
+
+### Libraries used
+```{r, libraries, warning=FALSE}
+library(caret)
+library(randomForest)
+```
+
+### WLE Training and Testing files
+  
+Two sets of data are provided for this project:  
+- a training file  
+- a testing file which in fact shall be used for the submission part of the Course Project  
+  
+We load each file (empty values and #DIV/0! are treated as NA values)  
+```{r wle-dataset}
+trainingFile <- read.csv("./data/pml-training.csv", na.strings = c("NA", "#DIV/0!"))
+dim(trainingFile)
+
+submissionFile  <- read.csv("./data/pml-testing.csv", na.strings = c("NA", "#DIV/0!"))
+dim(submissionFile)
+```
+
+### Features selection
+
+Each file contains 160 columns:  
+- the first seven are relative to the participant, time of exercise and other information not to be taken into account in our model   
+- Columns 8 to 159 contain information / measures from from each sensor (4 x 38)  
+- The last column is the "classe" feature our model shall predict (or the submission id in the submission pml-testing. csv file)  
+  
+
+In the present report a more crude approach and less restrictive approach is chosen: a quick exploration of the training file shows that many columns contains NA values and we will exclude these columns from the final selection.     
+
+First we compute for each column the number of NA values:
+```{r}
+columnsSelected <- colSums(is.na(trainingFile))
+```
+
+We use the information above to discard those columns containing any NA value from our features:  
+```{r}
+trainingSubset <- trainingFile[ , columnsSelected == 0]
+dim(trainingSubset)
+
+submissionSubset <- submissionFile[ , columnsSelected == 0]
+dim(submissionSubset)
+```
+
+
+We also discard the first seven columns as for reasons mentioned above in the description of each file:
+```{r}
+trainingSubset <- trainingSubset[, 8:60]
+dim(trainingSubset)
+
+submissionSubset <- submissionSubset[, 8:60]
+dim(submissionSubset)
+```
+
+We are left with 53 variables in each file.
+
+### Correlation test
+
+As mentioned above, Velloso et al. (ref 1) used correlation to decrease the number of features to 17. The following code chunk shows that indeed there are still a lot of variables highly correlated in our selection:   
+```{r}
+M <- abs(cor(trainingSubset[, -53]))
+diag(M) <- 0
+which(M > 0.8, arr.ind = T)
+```
+
+Yet we chose in a first approach to keep 53 features (including of course the feature "classe").
+
+
+### Final training and testing set 
+  
+The submission part being used for another part of the Course Project, we split the trainingSubset in two parts:  
+- 70% in a training part  
+- the remaining in a testing part that we will use only for cross validation of our model fit.  
 
 ```{r}
-summary(cars)
+set.seed(1234)
+
+idxTrain <- createDataPartition(trainingSubset$classe, p=0.8, list=FALSE)
+
+training <- trainingSubset[idxTrain, ]
+dim(training)
+
+testing <- trainingSubset[-idxTrain, ]
+dim(testing)
 ```
 
-You can also embed plots, for example:
+
+## 3. Random Forest model
+
+
+Following Velloso et al. (ref 1) we also choose  a random forest model which was introduced on week 3 of the PML course. But we build it directly from the "RandomForest" package as preliminary results have shown that this was a much faster approach than using the "train" function with "rf" method from the "Caret" package (See also this [thread](https://class.coursera.org/predmachlearn-033/forum/thread?thread_id=88) on the Course forum).   
+
+### Model Fitting on training set
+As mentioned above, we use the function "randomForest" with 200 trees and with "importance" set to TRUE:
+
+```{r}
+rfModel <- randomForest(classe ~ ., data=training, ntree=200, importance=T)
+print(rfModel)
+```
+  
+With these settings, we get an Out Of the Bag (OOB) estimate of the error rate of 0.45% which is remarkable.  
+
+The computation time is also very low (less than 3 min on my laptop) compared to several hours with the "train" function (results not reported here as other settings were also not directly comparable).  
+
+Another interesting aspect of our approach is that we are able to get such a result with a quite crude and direct approach to select features (discarding any feature containing at least one NA value).
+
+
+### Prediction / Validation on testing set
+
+We now validate our rfModel by performing prediction on the unused testing set (cross validation):  
+
+```{r}
+testingPrediction <- predict(rfModel, testing)
+confusionMatrix(testing$classe, testingPrediction)
+```
+  
+The results are remarkable as we get an overall accuracy of 0.9975 (while Kappa = 0.9968). It is very remarkable that this cross validation actually exercise shows that in the present case the out sample error (1 0.9975 = 0.25% ) is less than the in sample error (0.45%). Normally we would expect the opposite as phenomenas like overfitting could play in favor of a better in sample error.  
+
+
+
+###  Prediction on submission set
+
+Now we used our own model on the submissionSubset (without the last column):   
+```{r}
+submissionPrediction <- predict(rfModel, submissionSubset[ , -53])
+submissionPrediction
+```
+
+These results have been submitted with success to the Coursera for each problem id - yet another (indirect) proof that we have built a very efficient random Forest model there.  
+
 
 ```{r, echo=FALSE}
-plot(cars)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./submission/problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(submissionPrediction)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+## 5. References
+1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.  [[pdf version](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)]
+
+
+
+
