@@ -147,7 +147,7 @@ testingPrediction <- predict(rfModel, testing)
 confusionMatrix(testing$classe, testingPrediction)
 ```
   
-The results are remarkable as we get an overall accuracy of 0.9975 (while Kappa = 0.9968). It is very remarkable that this cross validation actually exercise shows that in the present case the out sample error (1 0.9975 = 0.25% ) is less than the in sample error (0.45%). Normally we would expect the opposite as phenomenas like overfitting could play in favor of a better in sample error.  
+The results are remarkable as we get an overall accuracy of 0.9975 (while Kappa = 0.9968). It is very remarkable that this cross validation actually exercise shows that in the present case the out sample error (1 - 0.9975 = 0.25% ) is less than the in sample error (0.45%). Normally we would expect the opposite as phenomenas like overfitting could play in favor of a better in sample error.  
 
 
 
